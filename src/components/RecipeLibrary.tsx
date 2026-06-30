@@ -1,133 +1,211 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { listDishes, getDishVersions } from "@/lib/dishes";
-import type { DishSummary, DishVersion } from "@/lib/types";
-
-const COURSE_LABELS: Record<string, string> = {
-  appetizer: "Appetizer",
-  main: "Main",
-  dessert: "Dessert",
-  side: "Side",
-  snack: "Snack",
-  beverage: "Beverage",
-};
+import { listRecipes, buildScaleContext, deleteRecipe } from "@/lib/repo";
+import { rawIngredientsForCovers, roundForDisplay } from "@/lib/scaling";
+import type { ScaleContext } from "@/lib/scaling";
+import type { RecipeDetail } from "@/lib/types";
 
 export default function RecipeLibrary() {
-  const [dishes, setDishes] = useState<DishSummary[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [versionMap, setVersionMap] = useState<Record<string, DishVersion[]>>({});
+  const [recipes, setRecipes] = useState<RecipeDetail[]>([]);
+  const [ctx, setCtx] = useState<ScaleContext | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [openId, setOpenId] = useState<string | null>(null);
+
+  async function load() {
+    const [list, context] = await Promise.all([listRecipes(), buildScaleContext()]);
+    setRecipes(list);
+    setCtx(context);
+    setLoading(false);
+  }
 
   useEffect(() => {
-    listDishes()
-      .then(setDishes)
-      .finally(() => setIsLoading(false));
+    load();
   }, []);
 
-  async function toggleVersions(dishId: string) {
-    if (expandedId === dishId) {
-      setExpandedId(null);
-      return;
-    }
-    setExpandedId(dishId);
-    if (!versionMap[dishId]) {
-      const versions = await getDishVersions(dishId);
-      setVersionMap((m) => ({ ...m, [dishId]: versions }));
-    }
+  if (loading) {
+    return <div className="flex items-center justify-center flex-1 text-sm text-gray-400">Loading…</div>;
   }
 
-  if (isLoading) {
+  if (recipes.length === 0) {
     return (
-      <div className="flex items-center justify-center h-full text-sm text-gray-400">
-        Loading…
-      </div>
-    );
-  }
-
-  if (dishes.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-full text-sm text-gray-400">
-        No saved dishes yet. Use "Save dish" in the chat to add one.
+      <div className="flex items-center justify-center flex-1 text-sm text-gray-400 text-center px-6">
+        No recipes yet. Capture one in the Chat tab to get started.
       </div>
     );
   }
 
   return (
     <div className="flex-1 overflow-y-auto px-6 py-6">
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {dishes.map((dish) => (
-          <div
-            key={dish.id}
-            className="border border-gray-200 rounded-2xl p-4 flex flex-col gap-3 hover:border-gray-300 transition-colors"
-          >
-            <div className="flex items-start justify-between gap-2">
-              <h3 className="text-sm font-semibold text-gray-900 leading-snug">{dish.name}</h3>
-              {dish.course_type && (
-                <span className="shrink-0 text-xs text-gray-400 border border-gray-200 rounded-full px-2 py-0.5">
-                  {COURSE_LABELS[dish.course_type] ?? dish.course_type}
-                </span>
-              )}
-            </div>
-
-            {dish.hero_ingredient && (
-              <p className="text-xs text-gray-500">
-                Hero: <span className="text-gray-700 font-medium">{dish.hero_ingredient}</span>
-              </p>
-            )}
-
-            {dish.latest_version?.recipe?.components?.length > 0 && (
-              <div className="flex flex-col gap-1">
-                {dish.latest_version.recipe.components.map((c, i) => (
-                  <div key={i} className="flex items-center gap-2 text-xs text-gray-600">
-                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                      c.role === "hero" ? "bg-gray-900" :
-                      c.role === "supporting" ? "bg-gray-400" : "bg-gray-200"
-                    }`} />
-                    <span>{c.name}</span>
-                    <span className="text-gray-300">{c.delivery}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {dish.tags.length > 0 && (
-              <div className="flex flex-wrap gap-1 mt-auto pt-1">
-                {dish.tags.map((tag) => (
-                  <span
-                    key={tag}
-                    className="text-xs text-gray-500 bg-gray-100 rounded-full px-2 py-0.5"
-                  >
-                    {tag}
-                  </span>
-                ))}
-              </div>
-            )}
-
-            <button
-              type="button"
-              onClick={() => toggleVersions(dish.id)}
-              className="text-xs text-gray-400 hover:text-gray-600 text-left transition-colors"
-            >
-              {expandedId === dish.id ? "Hide" : `${dish.latest_version?.version ?? 1} version${(dish.latest_version?.version ?? 1) > 1 ? "s" : ""} ↓`}
-            </button>
-
-            {expandedId === dish.id && (
-              <div className="border-t border-gray-100 pt-3 flex flex-col gap-2">
-                {(versionMap[dish.id] ?? []).slice().reverse().map((v) => (
-                  <div key={v.id} className="flex items-start gap-2 text-xs">
-                    <span className="shrink-0 font-mono text-gray-300">v{v.version}</span>
-                    <div className="flex flex-col gap-0.5">
-                      <span className="text-gray-700">{v.commit_message ?? "—"}</span>
-                      <span className="text-gray-300">{new Date(v.created_at).toLocaleDateString()}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+      <div className="flex flex-col gap-4 max-w-2xl mx-auto">
+        {recipes.map((recipe) => (
+          <RecipeCard
+            key={recipe.id}
+            recipe={recipe}
+            ctx={ctx!}
+            open={openId === recipe.id}
+            onToggle={() => setOpenId((id) => (id === recipe.id ? null : recipe.id))}
+            onDeleted={async () => {
+              await deleteRecipe(recipe.id);
+              await load();
+            }}
+          />
         ))}
       </div>
     </div>
   );
+}
+
+function RecipeCard({
+  recipe,
+  ctx,
+  open,
+  onToggle,
+  onDeleted,
+}: {
+  recipe: RecipeDetail;
+  ctx: ScaleContext;
+  open: boolean;
+  onToggle: () => void;
+  onDeleted: () => void;
+}) {
+  const version = recipe.current_version;
+  const [covers, setCovers] = useState<number>(version?.yield_quantity ?? 1);
+  const [prep, setPrep] = useState("");
+  const [prepLoading, setPrepLoading] = useState(false);
+
+  const totals = open && version ? safeScale(() => rawIngredientsForCovers(version, covers, ctx)) : null;
+
+  async function generatePrep() {
+    if (!version) return;
+    setPrepLoading(true);
+    setPrep("");
+    try {
+      const res = await fetch("/api/prep-steps", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          recipe: {
+            name: recipe.name,
+            yield_quantity: version.yield_quantity,
+            yield_unit: version.yield_unit,
+            instructions: version.instructions,
+            lines: version.lines.map((l) => ({
+              name: ctx.getIngredient(l.ingredient_id ?? "")?.name ?? "ingredient",
+              quantity: l.quantity,
+              unit: l.unit,
+              notes: l.notes,
+            })),
+          },
+        }),
+      });
+      if (!res.ok || !res.body) {
+        setPrep("Couldn't generate prep steps. Please try again.");
+        return;
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        setPrep((p) => p + decoder.decode(value));
+      }
+    } catch {
+      setPrep("Network error generating prep steps.");
+    } finally {
+      setPrepLoading(false);
+    }
+  }
+
+  return (
+    <div className="border border-gray-200 rounded-2xl p-4 flex flex-col gap-3">
+      <div className="flex items-start justify-between gap-2">
+        <button onClick={onToggle} className="text-left flex-1">
+          <h3 className="text-sm font-semibold text-gray-900">{recipe.name}</h3>
+          {version && (
+            <p className="text-xs text-gray-400 mt-0.5">
+              Yields {roundForDisplay(version.yield_quantity)} {version.yield_unit} ·{" "}
+              {version.lines.length} ingredient{version.lines.length === 1 ? "" : "s"}
+            </p>
+          )}
+        </button>
+        {recipe.type === "component" && (
+          <span className="shrink-0 text-xs text-gray-400 border border-gray-200 rounded-full px-2 py-0.5">
+            component
+          </span>
+        )}
+      </div>
+
+      {open && version && (
+        <div className="flex flex-col gap-4 border-t border-gray-100 pt-3">
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-gray-500">Scale to</label>
+            <input
+              type="number"
+              min={0}
+              step="any"
+              value={covers}
+              onChange={(e) => setCovers(Math.max(0, parseFloat(e.target.value) || 0))}
+              className="w-20 border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-gray-900 focus:outline-none focus:border-gray-400"
+            />
+            <span className="text-xs text-gray-500">covers</span>
+            {version.yield_quantity > 0 && (
+              <span className="text-xs text-gray-300 ml-1">
+                ×{roundForDisplay(covers / version.yield_quantity)}
+              </span>
+            )}
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <span className="text-xs text-gray-500 mb-1">
+              Raw ingredients for {roundForDisplay(covers)} covers
+            </span>
+            {totals?.error && <p className="text-xs text-red-500">{totals.error}</p>}
+            {totals?.value?.map((t) => (
+              <div
+                key={t.ingredient_id}
+                className="flex justify-between text-sm text-gray-700 py-0.5 border-b border-gray-50"
+              >
+                <span>{t.name}</span>
+                <span className="font-mono text-gray-900">
+                  {roundForDisplay(t.quantity)} {t.unit}
+                  {t.cost != null && <span className="text-gray-400"> · ${roundForDisplay(t.cost)}</span>}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <button
+              onClick={generatePrep}
+              disabled={prepLoading}
+              className="self-start text-xs font-medium text-gray-900 border border-gray-300 rounded-full px-3 py-1.5 hover:bg-gray-50 transition-colors disabled:opacity-40"
+            >
+              {prepLoading ? "Generating…" : prep ? "Regenerate prep steps" : "Suggest prep steps"}
+            </button>
+            {prep && (
+              <div className="text-sm text-gray-700 whitespace-pre-wrap bg-gray-50 rounded-lg p-3 leading-relaxed">
+                {prep}
+              </div>
+            )}
+          </div>
+
+          <button
+            onClick={onDeleted}
+            className="self-start text-xs text-gray-400 hover:text-red-500 transition-colors"
+          >
+            Delete recipe
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function safeScale<T>(fn: () => T): { value?: T; error?: string } {
+  try {
+    return { value: fn() };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Could not scale this recipe" };
+  }
 }

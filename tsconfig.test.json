@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "outDir": ".test-build",
+    "rootDir": "src/lib",
+    "noEmit": false,
+    "types": ["node"],
+    "incremental": false
+  },
+  "include": [
+    "src/lib/types.ts",
+    "src/lib/units.ts",
+    "src/lib/scaling.ts",
+    "src/lib/scaling.test.ts"
+  ],
+  "exclude": ["node_modules"]
+}
